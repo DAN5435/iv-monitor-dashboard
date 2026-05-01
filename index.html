@@ -1,0 +1,194 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>IV Monitoring Dashboard</title>
+  <style>
+    :root {
+      --bg: #0f172a;
+      --card: #1e293b;
+      --text: #e2e8f0;
+      --muted: #94a3b8;
+      --ok: #16a34a;
+      --alert: #dc2626;
+    }
+
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: Arial, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      display: grid;
+      place-items: center;
+      padding: 24px;
+    }
+
+    .wrapper {
+      width: min(1100px, 100%);
+    }
+
+    h1 {
+      margin: 0 0 18px 0;
+      text-align: center;
+      font-size: 1.6rem;
+      letter-spacing: 0.4px;
+    }
+
+    .row {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(220px, 1fr));
+      gap: 16px;
+    }
+
+    .box {
+      background: var(--card);
+      border: 1px solid #334155;
+      border-radius: 14px;
+      padding: 18px;
+      min-height: 170px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+    }
+
+    .title {
+      font-size: 1.2rem;
+      font-weight: 700;
+      margin-bottom: 6px;
+    }
+
+    .subtitle {
+      color: var(--muted);
+      font-size: 1rem;
+      margin-bottom: 10px;
+    }
+
+    .id {
+      font-size: 0.95rem;
+      margin-bottom: 8px;
+      color: #cbd5e1;
+    }
+
+    .status {
+      font-weight: 700;
+      font-size: 1rem;
+      padding: 8px 10px;
+      border-radius: 8px;
+      width: fit-content;
+      background: #334155;
+    }
+
+    .status.ok { background: rgba(22, 163, 74, 0.2); color: #86efac; }
+    .status.alert { background: rgba(220, 38, 38, 0.2); color: #fca5a5; }
+
+    .footer {
+      margin-top: 14px;
+      font-size: 0.85rem;
+      color: var(--muted);
+      text-align: center;
+    }
+
+    @media (max-width: 840px) {
+      .row { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrapper">
+    <h1>IV Monitoring</h1>
+    <div class="row">
+      <article class="box">
+        <div>
+          <div class="title">Patient 1</div>
+          <div class="subtitle">IV-drip</div>
+          <div class="id" id="id1"></div>
+        </div>
+        <div class="status" id="status1">Loading...</div>
+      </article>
+
+      <article class="box">
+        <div>
+          <div class="title">Patient 2</div>
+          <div class="subtitle">IV-drip</div>
+          <div class="id" id="id2"></div>
+        </div>
+        <div class="status" id="status2">Loading...</div>
+      </article>
+
+      <article class="box">
+        <div>
+          <div class="title">Patient 3</div>
+          <div class="subtitle">IV-drip</div>
+          <div class="id" id="id3"></div>
+        </div>
+        <div class="status" id="status3">Loading...</div>
+      </article>
+    </div>
+    <div class="footer" id="lastUpdate">Waiting for data...</div>
+  </div>
+
+  <script>
+    // ------------------------------
+    // USER SETTINGS
+    // ------------------------------
+    // Replace with your ThingSpeak channel read API URL:
+    // Use fields 1, 2, 3 for patient 1, 2, 3
+    const THINGSPEAK_JSON_URL =
+      "https://api.thingspeak.com/channels/YOUR_CHANNEL_ID/feeds/last.json?api_key=YOUR_READ_API_KEY";
+
+    function randomId(prefix) {
+      const value = Math.floor(10000 + Math.random() * 90000);
+      return `${prefix}-${value}`;
+    }
+
+    // Random patient IDs (generated on each page load)
+    document.getElementById("id1").textContent = `Patient ID: ${randomId("P1")}`;
+    document.getElementById("id2").textContent = `Patient ID: ${randomId("P2")}`;
+    document.getElementById("id3").textContent = `Patient ID: ${randomId("P3")}`;
+
+    function renderStatus(elementId, rawValue) {
+      const el = document.getElementById(elementId);
+      const value = Number(rawValue);
+
+      // Mapping based on your sensor definition:
+      // 1 => LOW (detected), 0 => HIGH (not detected)
+      if (value === 1) {
+        el.textContent = "LOW (1) - Liquid Detected";
+        el.className = "status alert";
+      } else if (value === 0) {
+        el.textContent = "HIGH (0) - No Liquid";
+        el.className = "status ok";
+      } else {
+        el.textContent = "No Data";
+        el.className = "status";
+      }
+    }
+
+    async function fetchData() {
+      try {
+        const response = await fetch(THINGSPEAK_JSON_URL, { cache: "no-store" });
+        const data = await response.json();
+
+        // field1/2/3 are used for 3 patient boxes.
+        // If only field1 is sent by one ESP8266, patient2/3 will show No Data.
+        renderStatus("status1", data.field1);
+        renderStatus("status2", data.field2);
+        renderStatus("status3", data.field3);
+
+        const now = new Date().toLocaleString();
+        document.getElementById("lastUpdate").textContent = `Last refresh: ${now}`;
+      } catch (err) {
+        document.getElementById("lastUpdate").textContent =
+          "Error loading ThingSpeak data. Check channel ID and API key.";
+      }
+    }
+
+    // Initial fetch and periodic updates
+    fetchData();
+    setInterval(fetchData, 15000);
+  </script>
+</body>
+</html>
