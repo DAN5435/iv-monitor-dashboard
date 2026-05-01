@@ -136,6 +136,7 @@
     // ------------------------------
     // Replace with your ThingSpeak channel read API URL:
     // Use fields 1, 2, 3 for patient 1, 2, 3
+    // Current URL uses feeds.json (returns array in data.feeds).
     const THINGSPEAK_JSON_URL =
       "https://api.thingspeak.com/channels/3362022/feeds.json?api_key=ORXNRWNBY63OSOXU&results=2";
 
@@ -154,12 +155,13 @@
       const value = Number(rawValue);
 
       // Mapping based on your sensor definition:
-      // 1 => LOW (detected), 0 => HIGH (not detected)
+      // 1 => LOW => Have IV
+      // 0 => HIGH => No IV
       if (value === 1) {
-        el.textContent = "LOW (1) - Liquid Detected";
+        el.textContent = "Have IV (LOW = 1)";
         el.className = "status alert";
       } else if (value === 0) {
-        el.textContent = "HIGH (0) - No Liquid";
+        el.textContent = "No IV (HIGH = 0)";
         el.className = "status ok";
       } else {
         el.textContent = "No Data";
@@ -170,19 +172,24 @@
     async function fetchData() {
       try {
         const response = await fetch(THINGSPEAK_JSON_URL, { cache: "no-store" });
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}`);
+        }
         const data = await response.json();
+        const feeds = Array.isArray(data.feeds) ? data.feeds : [];
+        const latest = feeds.length > 0 ? feeds[feeds.length - 1] : null;
 
         // field1/2/3 are used for 3 patient boxes.
         // If only field1 is sent by one ESP8266, patient2/3 will show No Data.
-        renderStatus("status1", data.field1);
-        renderStatus("status2", data.field2);
-        renderStatus("status3", data.field3);
+        renderStatus("status1", latest ? latest.field1 : null);
+        renderStatus("status2", latest ? latest.field2 : null);
+        renderStatus("status3", latest ? latest.field3 : null);
 
         const now = new Date().toLocaleString();
         document.getElementById("lastUpdate").textContent = `Last refresh: ${now}`;
       } catch (err) {
         document.getElementById("lastUpdate").textContent =
-          "Error loading ThingSpeak data. Check channel ID and API key.";
+          `Error loading ThingSpeak data (${err.message}). Check channel ID/API key/privacy settings.`;
       }
     }
 
