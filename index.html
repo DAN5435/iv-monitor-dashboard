@@ -84,6 +84,36 @@
     .status.ok { background: rgba(22, 163, 74, 0.2); color: #86efac; }
     .status.alert { background: rgba(220, 38, 38, 0.2); color: #fca5a5; }
 
+    .field-label {
+      margin-top: 10px;
+      margin-bottom: 5px;
+      font-size: 0.85rem;
+      color: var(--muted);
+      font-weight: 600;
+    }
+
+    .field-input,
+    .field-textarea {
+      width: 100%;
+      border: 1px solid #475569;
+      border-radius: 8px;
+      background: #0b1222;
+      color: var(--text);
+      padding: 8px 10px;
+      font-size: 0.9rem;
+      outline: none;
+    }
+
+    .field-input:focus,
+    .field-textarea:focus {
+      border-color: #60a5fa;
+    }
+
+    .field-textarea {
+      resize: vertical;
+      min-height: 70px;
+    }
+
     .footer {
       margin-top: 14px;
       font-size: 0.85rem;
@@ -104,27 +134,36 @@
         <div>
           <div class="title">Patient 1</div>
           <div class="subtitle">IV-drip</div>
-          <div class="id" id="id1"></div>
         </div>
         <div class="status" id="status1">Loading...</div>
+        <label class="field-label" for="id1">Patient ID</label>
+        <input class="field-input" id="id1" type="text" placeholder="Enter patient ID">
+        <label class="field-label" for="desc1">Patient Description</label>
+        <textarea class="field-textarea" id="desc1" placeholder="Type patient description"></textarea>
       </article>
 
       <article class="box">
         <div>
           <div class="title">Patient 2</div>
           <div class="subtitle">IV-drip</div>
-          <div class="id" id="id2"></div>
         </div>
         <div class="status" id="status2">Loading...</div>
+        <label class="field-label" for="id2">Patient ID</label>
+        <input class="field-input" id="id2" type="text" placeholder="Enter patient ID">
+        <label class="field-label" for="desc2">Patient Description</label>
+        <textarea class="field-textarea" id="desc2" placeholder="Type patient description"></textarea>
       </article>
 
       <article class="box">
         <div>
           <div class="title">Patient 3</div>
           <div class="subtitle">IV-drip</div>
-          <div class="id" id="id3"></div>
         </div>
         <div class="status" id="status3">Loading...</div>
+        <label class="field-label" for="id3">Patient ID</label>
+        <input class="field-input" id="id3" type="text" placeholder="Enter patient ID">
+        <label class="field-label" for="desc3">Patient Description</label>
+        <textarea class="field-textarea" id="desc3" placeholder="Type patient description"></textarea>
       </article>
     </div>
     <div class="footer" id="lastUpdate">Waiting for data...</div>
@@ -140,29 +179,35 @@
     const THINGSPEAK_JSON_URL =
       "https://api.thingspeak.com/channels/3362022/feeds.json?api_key=ORXNRWNBY63OSOXU&results=2";
 
-    function randomId(prefix) {
-      const value = Math.floor(10000 + Math.random() * 90000);
-      return `${prefix}-${value}`;
+    function bindPersistentField(elementId, storageKey, defaultValue = "") {
+      const el = document.getElementById(elementId);
+      const saved = localStorage.getItem(storageKey);
+      el.value = saved !== null ? saved : defaultValue;
+      el.addEventListener("input", () => {
+        localStorage.setItem(storageKey, el.value);
+      });
     }
 
-    // Random patient IDs (generated on each page load)
-    document.getElementById("id1").textContent = `Patient ID: ${randomId("P1")}`;
-    document.getElementById("id2").textContent = `Patient ID: ${randomId("P2")}`;
-    document.getElementById("id3").textContent = `Patient ID: ${randomId("P3")}`;
+    bindPersistentField("id1", "patient1_id", "P1-10001");
+    bindPersistentField("id2", "patient2_id", "P2-10002");
+    bindPersistentField("id3", "patient3_id", "P3-10003");
+    bindPersistentField("desc1", "patient1_desc");
+    bindPersistentField("desc2", "patient2_desc");
+    bindPersistentField("desc3", "patient3_desc");
 
     function renderStatus(elementId, rawValue) {
       const el = document.getElementById(elementId);
       const value = Number(rawValue);
 
       // Mapping based on your sensor definition:
-      // 1 => LOW => Have IV
-      // 0 => HIGH => No IV
+      // 1 => Have IV
+      // 0 => Low in IV
       if (value === 1) {
-        el.textContent = "Have IV (LOW = 1)";
-        el.className = "status alert";
-      } else if (value === 0) {
-        el.textContent = "No IV (HIGH = 0)";
+        el.textContent = "HAVE IV";
         el.className = "status ok";
+      } else if (value === 0) {
+        el.textContent = "LOW IN IV";
+        el.className = "status alert";
       } else {
         el.textContent = "No Data";
         el.className = "status";
