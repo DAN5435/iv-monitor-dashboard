@@ -121,6 +121,28 @@
       text-align: center;
     }
 
+    .sound-hint {
+      margin: 0 0 14px 0;
+      text-align: center;
+      font-size: 0.85rem;
+      color: #fbbf24;
+    }
+
+    .sound-hint button {
+      margin-left: 8px;
+      padding: 6px 12px;
+      border-radius: 8px;
+      border: 1px solid #fbbf24;
+      background: transparent;
+      color: #fbbf24;
+      cursor: pointer;
+      font-size: 0.85rem;
+    }
+
+    .sound-hint button:hover {
+      background: rgba(251, 191, 36, 0.15);
+    }
+
     @media (max-width: 840px) {
       .row { grid-template-columns: 1fr; }
     }
@@ -129,6 +151,10 @@
 <body>
   <div class="wrapper">
     <h1>IV Monitoring</h1>
+    <p class="sound-hint" id="soundHint">
+      Sound alarm when any patient shows LOW IN IV — click once to enable (browser requirement).
+      <button type="button" id="enableSoundBtn">Enable alarm sound</button>
+    </p>
     <div class="row">
       <article class="box">
         <div>
@@ -174,10 +200,12 @@
     // USER SETTINGS
     // ------------------------------
     // Replace with your ThingSpeak channel read API URL:
-    // Use fields 1, 2, 3 for patient 1, 2, 3
-    // Current URL uses feeds.json (returns array in data.feeds).
+    // Use fields 1, 2, 3 for patient 1, 2, 3 (one ESP per field).
+    // Use feeds.json with results=30+ so we can merge rows: each device
+    // creates its own row, so the latest single row may not contain all fields.
+    // Increase results= if a patient has not reported in a long time (free tier limits apply).
     const THINGSPEAK_JSON_URL =
-      "https://api.thingspeak.com/channels/3362022/feeds.json?api_key=ORXNRWNBY63OSOXU&results=2";
+      "https://api.thingspeak.com/channels/3362022/feeds.json?api_key=ORXNRWNBY63OSOXU&results=100";
 
     function bindPersistentField(elementId, storageKey, defaultValue = "") {
       const el = document.getElementById(elementId);
@@ -195,8 +223,161 @@
     bindPersistentField("desc2", "patient2_desc");
     bindPersistentField("desc3", "patient3_desc");
 
+    // --- LOW IN IV audible alarm (noise + tone; requires user gesture to unlock) ---
+    let audioCtx = null;
+    let audioUnlocked = false;
+    let lastLowIvAlarmAt = 0;
+    const LOW_IV_ALARM_REPEAT_MS = 4500;
+    let lastMergedSnapshot = { field1: null, field2: null, field3: null };
+
+    function getAudioContext() {
+      if (!audioCtx) {
+        const Ctx = window.AudioContext || window.webkitAudioContext;
+        if (Ctx) {
+          audioCtx = new Ctx();
+        }
+      }
+      return audioCtx;
+    }
+
+    async function unlockAlarmAudio() {
+      const ctx = getAudioContext();
+      if (!ctx) {
+        return;
+      }
+      if (ctx.state === "suspended") {
+        await ctx.resume();
+      }
+      audioUnlocked = true;
+      const hint = document.getElementById("soundHint");
+      if (hint) {
+        hint.style.color = "#86efac";
+        hint.innerHTML = "Alarm sound is enabled. You will hear noise when any patient shows LOW IN IV.";
+      }
+    }
+
+    document.getElementById("enableSoundBtn").addEventListener("click", () => {
+      unlockAlarmAudio();
+    });
+    document.body.addEventListener(
+      "click",
+      () => {
+        unlockAlarmAudio();
+      },
+      { once: true }
+    );
+
+    function playNoiseBurst(ctx, startTime, durationSec, gainValue) {
+      const sampleRate = ctx.sampleRate;
+      const n = Math.floor(sampleRate * durationSec);
+      const buffer = ctx.createBuffer(1, n, sampleRate);
+      const data = buffer.getChannelData(0);
+      for (let i = 0; i < n; i++) {
+        data[i] = (Math.random() * 2 - 1) * 0.85;
+      }
+      const src = ctx.createBufferSource();
+      src.buffer = buffer;
+      const filter = ctx.createBiquadFilter();
+      filter.type = "bandpass";
+      filter.frequency.setValueAtTime(1200, startTime);
+      filter.Q.setValueAtTime(0.6, startTime);
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0.0001, startTime);
+      g.gain.exponentialRampToValueAtTime(gainValue, startTime + 0.02);
+      g.gain.exponentialRampToValueAtTime(0.0001, startTime + durationSec);
+      src.connect(filter);
+      filter.connect(g);
+      g.connect(ctx.destination);
+      src.start(startTime);
+      src.stop(startTime + durationSec + 0.05);
+    }
+
+    function playBeep(ctx, startTime, freq, durationSec, gainValue) {
+      const osc = ctx.createOscillator();
+      const g = ctx.createGain();
+      osc.type = "square";
+      osc.frequency.setValueAtTime(freq, startTime);
+      g.gain.setValueAtTime(0.0001, startTime);
+      g.gain.exponentialRampToValueAtTime(gainValue, startTime + 0.015);
+      g.gain.exponentialRampToValueAtTime(0.0001, startTime + durationSec);
+      osc.connect(g);
+      g.connect(ctx.destination);
+      osc.start(startTime);
+      osc.stop(startTime + durationSec + 0.02);
+    }
+
+    function playLowIvAlarmSequence() {
+      const ctx = getAudioContext();
+      if (!ctx || !audioUnlocked) {
+        return;
+      }
+      const t0 = ctx.currentTime + 0.05;
+      playNoiseBurst(ctx, t0, 0.22, 0.12);
+      playNoiseBurst(ctx, t0 + 0.18, 0.2, 0.1);
+      playBeep(ctx, t0 + 0.05, 880, 0.12, 0.08);
+      playBeep(ctx, t0 + 0.22, 660, 0.14, 0.07);
+      playBeep(ctx, t0 + 0.4, 880, 0.12, 0.08);
+    }
+
+    function isLowIvValue(raw) {
+      return fieldHasValue(raw) && Number(raw) === 0;
+    }
+
+    function maybeAlarmLowIv(anyLowIv) {
+      if (!anyLowIv || !audioUnlocked) {
+        return;
+      }
+      const now = Date.now();
+      if (now - lastLowIvAlarmAt < LOW_IV_ALARM_REPEAT_MS) {
+        return;
+      }
+      lastLowIvAlarmAt = now;
+      try {
+        playLowIvAlarmSequence();
+      } catch (e) {
+        /* ignore */
+      }
+    }
+
+    function fieldHasValue(v) {
+      return v !== null && v !== undefined && String(v).trim() !== "";
+    }
+
+    // Newest row first: take the latest non-empty value per field across recent feeds.
+    function mergeLatestByField(feeds) {
+      const out = { field1: null, field2: null, field3: null };
+      if (!Array.isArray(feeds) || feeds.length === 0) {
+        return out;
+      }
+      for (let i = feeds.length - 1; i >= 0; i--) {
+        const row = feeds[i];
+        if (!fieldHasValue(out.field1) && fieldHasValue(row.field1)) {
+          out.field1 = row.field1;
+        }
+        if (!fieldHasValue(out.field2) && fieldHasValue(row.field2)) {
+          out.field2 = row.field2;
+        }
+        if (!fieldHasValue(out.field3) && fieldHasValue(row.field3)) {
+          out.field3 = row.field3;
+        }
+        if (
+          fieldHasValue(out.field1) &&
+          fieldHasValue(out.field2) &&
+          fieldHasValue(out.field3)
+        ) {
+          break;
+        }
+      }
+      return out;
+    }
+
     function renderStatus(elementId, rawValue) {
       const el = document.getElementById(elementId);
+      if (!fieldHasValue(rawValue)) {
+        el.textContent = "No Data";
+        el.className = "status";
+        return;
+      }
       const value = Number(rawValue);
 
       // Mapping based on your sensor definition:
@@ -222,13 +403,18 @@
         }
         const data = await response.json();
         const feeds = Array.isArray(data.feeds) ? data.feeds : [];
-        const latest = feeds.length > 0 ? feeds[feeds.length - 1] : null;
+        const merged = mergeLatestByField(feeds);
+        lastMergedSnapshot = merged;
 
-        // field1/2/3 are used for 3 patient boxes.
-        // If only field1 is sent by one ESP8266, patient2/3 will show No Data.
-        renderStatus("status1", latest ? latest.field1 : null);
-        renderStatus("status2", latest ? latest.field2 : null);
-        renderStatus("status3", latest ? latest.field3 : null);
+        renderStatus("status1", merged.field1);
+        renderStatus("status2", merged.field2);
+        renderStatus("status3", merged.field3);
+
+        const anyLowIv =
+          isLowIvValue(merged.field1) ||
+          isLowIvValue(merged.field2) ||
+          isLowIvValue(merged.field3);
+        maybeAlarmLowIv(anyLowIv);
 
         const now = new Date().toLocaleString();
         document.getElementById("lastUpdate").textContent = `Last refresh: ${now}`;
@@ -241,6 +427,16 @@
     // Initial fetch and periodic updates
     fetchData();
     setInterval(fetchData, 15000);
+
+    // Repeat alarm while LOW IN IV (not only on each ThingSpeak poll).
+    setInterval(() => {
+      const m = lastMergedSnapshot;
+      const anyLowIv =
+        isLowIvValue(m.field1) ||
+        isLowIvValue(m.field2) ||
+        isLowIvValue(m.field3);
+      maybeAlarmLowIv(anyLowIv);
+    }, 3000);
   </script>
 </body>
 </html>
