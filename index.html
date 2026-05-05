@@ -223,7 +223,7 @@
     bindPersistentField("desc2", "patient2_desc");
     bindPersistentField("desc3", "patient3_desc");
 
-    // --- LOW IN IV audible alarm (noise + tone; requires user gesture to unlock) ---
+    // --- LOW IN IV audible alarm (white noise only; requires user gesture to unlock) ---
     let audioCtx = null;
     let audioUnlocked = false;
     let lastLowIvAlarmAt = 0;
@@ -292,31 +292,15 @@
       src.stop(startTime + durationSec + 0.05);
     }
 
-    function playBeep(ctx, startTime, freq, durationSec, gainValue) {
-      const osc = ctx.createOscillator();
-      const g = ctx.createGain();
-      osc.type = "square";
-      osc.frequency.setValueAtTime(freq, startTime);
-      g.gain.setValueAtTime(0.0001, startTime);
-      g.gain.exponentialRampToValueAtTime(gainValue, startTime + 0.015);
-      g.gain.exponentialRampToValueAtTime(0.0001, startTime + durationSec);
-      osc.connect(g);
-      g.connect(ctx.destination);
-      osc.start(startTime);
-      osc.stop(startTime + durationSec + 0.02);
-    }
-
     function playLowIvAlarmSequence() {
       const ctx = getAudioContext();
       if (!ctx || !audioUnlocked) {
         return;
       }
       const t0 = ctx.currentTime + 0.05;
-      playNoiseBurst(ctx, t0, 0.22, 0.12);
-      playNoiseBurst(ctx, t0 + 0.18, 0.2, 0.1);
-      playBeep(ctx, t0 + 0.05, 880, 0.12, 0.08);
-      playBeep(ctx, t0 + 0.22, 660, 0.14, 0.07);
-      playBeep(ctx, t0 + 0.4, 880, 0.12, 0.08);
+      playNoiseBurst(ctx, t0, 0.28, 0.13);
+      playNoiseBurst(ctx, t0 + 0.3, 0.28, 0.13);
+      playNoiseBurst(ctx, t0 + 0.6, 0.28, 0.13);
     }
 
     function isLowIvValue(raw) {
