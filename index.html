@@ -205,7 +205,9 @@
     // creates its own row, so the latest single row may not contain all fields.
     // Increase results= if a patient has not reported in a long time (free tier limits apply).
     const THINGSPEAK_JSON_URL =
-      "https://api.thingspeak.com/channels/3362022/feeds.json?api_key=ORXNRWNBY63OSOXU&results=100";
+      "https://api.thingspeak.com/channels/3362022/feeds.json?api_key=ORXNRWNBY63OSOXU&results=30";
+    // Lower = faster GitHub page updates (does not speed up ESP -> ThingSpeak).
+    const DASHBOARD_POLL_INTERVAL_MS = 5000;
 
     function bindPersistentField(elementId, storageKey, defaultValue = "") {
       const el = document.getElementById(elementId);
@@ -410,7 +412,7 @@
 
     // Initial fetch and periodic updates
     fetchData();
-    setInterval(fetchData, 15000);
+    setInterval(fetchData, DASHBOARD_POLL_INTERVAL_MS);
 
     // Repeat alarm while LOW IN IV (not only on each ThingSpeak poll).
     setInterval(() => {
